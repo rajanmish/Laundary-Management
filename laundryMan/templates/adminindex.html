@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin SQL Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4">
+        <h1 class="text-2xl font-bold mb-4">Admin SQL Dashboard</h1>
+        <div class="mb-4">
+            <label for="operation" class="block text-lg font-semibold">Operation:</label>
+            <select id="operation" class="mb-2 p-2 border border-gray-300 rounded w-full">
+                <!-- Admin can perform any operation -->
+                <option value="SELECT">SELECT</option>
+                <option value="INSERT">INSERT</option>
+                <option value="UPDATE">UPDATE</option>
+                <option value="DELETE">DELETE</option>
+            </select>
+            <div id="operationFormContainer"></div>
+            <label for="table" class="block text-lg font-semibold">Table:</label>
+            <select id="table" class="mb-2 p-2 border border-gray-300 rounded w-full">
+                {% for table_name in table_names %}
+                    <option value="{{ table_name }}">{{ table_name }}</option>
+                {% endfor %}
+            </select>            
+
+            <div id="whereClauseContainer" style="display:none;">
+                <label for="where" class="block text-lg font-semibold">WHERE clause:</label>
+                <input type="text" id="where" class="mb-2 p-2 border border-gray-300 rounded w-full" placeholder="Enter WHERE clause (optional)">
+            </div>
+            
+            <button onclick="runQuery()" class="mt-2 px-4 py-2 bg-blue-500 text-white rounded">Run Query</button>
+        </div>
+        <div id="results">
+
+        </div>
+    </div>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script>
+
+function runQuery(whereClause) {
+    const operation = document.getElementById('operation').value;
+    const tableName = document.getElementById('table').value;
+    var whereClause_dummy = '';
+    // const whereClause = document.getElementById('where').value;
+    console.log(operation)
+   let whereClauseSelected = false; 
+
+    if (operation == 'SELECT'){
+        console.log("Reached this!")
+        const selectedColumns = document.querySelectorAll('input[name="selected_columns"]:checked');
+        const whereClauses = [];
+        const selectedColumnNames = [];
+        console.log(selectedColumns)
+
+        selectedColumns.forEach(column => {
+            const columnName = column.value;
+            const operation = document.querySelector(`select[name="operation_${columnName}"]`).value;
+            const filterValue = document.querySelector(`input[name="filter_${columnName}"]`).value;
+
+            if (filterValue) {
+                whereClauses.push(`${columnName} ${operation} '${filterValue}'`);
+            }
+
+            selectedColumnNames.push(column.value);
+        });
+        whereClause_dummy = whereClauses.join(' AND ');
+        selectedColumnNames_dummy = selectedColumnNames.join(', ');
+        // console.log(whereClause_dummy, "1")
+        whereClauseSelected = true;
+        console.log(selectedColumnNames)
+    }
+    // console.log(whereClause_dummy, "2")
+
+    const formData = new FormData();
+    formData.append('operation', operation);
+    formData.append('table_name', tableName);
+
+    if (operation == 'INSERT'){
+        const inputs = document.getElementById('operationFormContainer').querySelectorAll('input');
+        const values = Array.from(inputs).map(input => input.value);
+        console.log(values)
+        formData.append('values[]', values);
+    }
+
+    if (whereClauseSelected){
+        console.log("whereClauseSelected")
+        console.log(whereClause_dummy)
+        formData.append('where_clause', whereClause_dummy);
+
+        console.log("----------")
+        console.log(selectedColumnNames_dummy)
+        formData.append('selected_columns', selectedColumnNames_dummy);
+    }
+
+    if (whereClause){
+    console.log(whereClause)
+    formData.append('where_clause', whereClause);
+    }
+    console.log(operation, tableName)
+    fetch('/run_query', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Display the query results
+            displayQueryResults(data.data);
+        } else {
+            // Display an error message
+            alert(data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred while running the query: ' + error.message);
+    });
+
+    if (operation == 'INSERT'){
+        // Clear the form after submitting the INSERT query
+        fetchColumnsForInsert(tableName);
+        // fetchColumnNames(tableName);
+    }
+}
+
+function displayQueryResults(data) {
+    const resultsDiv = document.getElementById('results');
+    // Clear previous results
+    resultsDiv.innerHTML = '';
+
+    // Check if data is not empty
+    if (data && data.length > 0) {
+        const table = document.createElement('table');
+        table.classList.add('min-w-full', 'leading-normal');
+
+        // Create table header
+        const thead = document.createElement('thead');
+        thead.classList.add('bg-gray-100');
+        const headerRow = document.createElement('tr');
+        Object.keys(data[0]).forEach((key) => {
+            const th = document.createElement('th');
+            th.classList.add('px-5', 'py-3', 'border-b-2', 'border-gray-200', 'bg-gray-100', 'text-left', 'text-xs', 'font-semibold', 'text-gray-600', 'uppercase', 'tracking-wider');
+            th.textContent = key;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        // Create table body
+        const tbody = document.createElement('tbody');
+        data.forEach((row) => {
+            console.log("For Select, Data is processed thus: ", row);
+            const tr = document.createElement('tr');
+            tr.classList.add('bg-white');
+            Object.values(row).forEach((val) => {
+                const td = document.createElement('td');
+                td.classList.add('px-5', 'py-5', 'border-b', 'border-gray-200', 'bg-white', 'text-sm');
+                td.textContent = val;
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+
+        resultsDiv.appendChild(table);
+    } else {
+        // Display 'No results found' if data is empty
+        resultsDiv.textContent = 'No results found.';
+    }
+}
+
+function fetchColumnsForSelect(tableName) {
+    fetch(`/get_column_names?table_name=${tableName}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                displaySelectForm(data.data);
+            } else {
+                alert(data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while fetching column names.');
+        });
+}
+
+tableName = document.getElementById('table').value;
+fetchColumnsForSelect(tableName);
+
+function displaySelectForm(columnNames) {
+    const formContainer = document.getElementById('operationFormContainer');
+    formContainer.innerHTML = ''; // Clear existing form
+
+    const table = document.createElement('table');
+    table.classList.add('min-w-full');
+
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    ['Column', 'Operation', 'Filter Value'].forEach(text => {
+        const th = document.createElement('th');
+        th.textContent = text;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    columnNames.forEach((columnName) => {
+        const row = document.createElement('tr');
+
+        // Column name checkbox
+        const columnTd = document.createElement('td');
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.name = 'selected_columns';
+        checkbox.value = columnName;
+        checkbox.checked = true;
+        label.appendChild(checkbox);
+        label.append(columnName);
+        columnTd.appendChild(label);
+        row.appendChild(columnTd);
+
+        // Operation dropdown
+        const operationTd = document.createElement('td');
+        const operationDropdown = document.createElement('select');
+        operationDropdown.name = 'operation_' + columnName;
+        ['=', '!=', '>', '<', '>=', '<='].forEach(op => {
+            const option = document.createElement('option');
+            option.value = op;
+            option.textContent = op;
+            operationDropdown.appendChild(option);
+        });
+        operationTd.appendChild(operationDropdown);
+        row.appendChild(operationTd);
+
+        // Filter value textbox
+        const filterTd = document.createElement('td');
+        const filterTextbox = document.createElement('input');
+        filterTextbox.type = 'text';
+        filterTextbox.name = 'filter_' + columnName;
+        filterTd.appendChild(filterTextbox);
+        row.appendChild(filterTd);
+
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+
+    formContainer.appendChild(table);
+}
+
+function fetchColumnNames(tableName) {
+    fetch(`/get_table_data?table_name=${tableName}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                displayInsertForm(data.columnNames, data.records);
+            } else {
+                alert(data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error); 
+            alert(error.message);
+        });
+}
+
+function updateOperationForm() {
+    const operation = document.getElementById('operation').value;
+    const formContainer = document.getElementById('operationFormContainer');
+    const whereClauseContainer = document.getElementById('whereClauseContainer');
+    formContainer.innerHTML = ''; // Clear existing form
+    whereClauseContainer.style.display = 'none'; // Hide WHERE clause by default
+    const tableName = document.getElementById('table').value;
+    switch (operation) {
+        case 'SELECT':
+            fetchColumnsForSelect(tableName);
+        case 'UPDATE':
+            fetchRecordsForUpdate(tableName);
+            break;
+        case 'DELETE':
+            fetchRecordsForDeletion(tableName);
+            break;
+        case 'INSERT':
+            fetchColumnNames(tableName);
+            break;
+    }
+}
+
+function submitInsertForm() {
+    const inputs = document.getElementById('dynamicFormContainer').getElementsByTagName('input');
+    const values = Array.from(inputs).map(input => input.value);
+    // Send the array of values to the server
+    runQuery({ operation: 'INSERT', values: values });
+}
+
+function fetchRecordsForDeletion(t) {
+    const tableName = document.getElementById('table').value;
+    fetch('/get_records?table_name=' + tableName)
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            displayDeleteForm(data.data);
+        } else {
+            alert(data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert(error.message);
+    });
+}
+
+function displayInsertForm(columnNames) {
+    const formContainer = document.getElementById('operationFormContainer');
+    formContainer.innerHTML = ''; // Clear existing form
+
+    // Create the table elements
+    const table = document.createElement('table');
+    table.classList.add('min-w-full', 'shadow', 'overflow-hidden', 'border-b', 'border-gray-200', 'sm:rounded-lg');
+
+    // Create the table header
+    const thead = document.createElement('thead');
+    thead.classList.add('bg-gray-50');
+    const headerRow = document.createElement('tr');
+    columnNames.forEach((columnName) => {
+        const th = document.createElement('th');
+        th.textContent = columnName;
+        th.classList.add('px-6', 'py-3', 'text-left', 'text-xs', 'font-medium', 'text-gray-500', 'uppercase', 'tracking-wider');
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Create the table body
+    const tbody = document.createElement('tbody');
+    const bodyRow = document.createElement('tr');
+    bodyRow.classList.add('bg-white');
+    columnNames.forEach((columnName) => {
+        const td = document.createElement('td');
+        const input = document.createElement('input');
+        input.setAttribute('type', 'text');
+        input.setAttribute('name', columnName);
+        input.classList.add('mt-1', 'focus:ring-indigo-500', 'focus:border-indigo-500', 'block', 'w-full', 'shadow-sm', 'sm:text-sm', 'border-gray-300', 'rounded-md');
+        td.appendChild(input);
+        bodyRow.appendChild(td);
+    });
+    tbody.appendChild(bodyRow);
+    table.appendChild(tbody);
+
+    // Append the table to the form container
+    formContainer.appendChild(table);
+}
+
+function displayDeleteForm(records) {
+
+    const formContainer = document.getElementById('operationFormContainer');
+    const tableName = document.getElementById('table').value;
+    formContainer.innerHTML = ''; // Clear existing form
+    // init a boolean
+    let refreshNow = false;
+
+    // Create a table element
+    const table = document.createElement('table');
+    table.classList.add('min-w-full', 'leading-normal');
+
+    // Create table header
+    const thead = document.createElement('thead');
+    thead.classList.add('bg-gray-100');
+    const headerRow = document.createElement('tr');
+    Object.keys(records[0]).forEach((key) => {
+        const th = document.createElement('th');
+        th.classList.add('px-5', 'py-3', 'border-b-2', 'border-gray-200', 'bg-gray-100', 'text-left', 'text-xs', 'font-semibold', 'text-gray-600', 'uppercase', 'tracking-wider');
+        th.textContent = key;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Create table body
+    const tbody = document.createElement('tbody');
+    records.forEach(record => {
+        const tr = document.createElement('tr');
+        tr.classList.add('bg-white');
+        Object.values(record).forEach((val) => {
+            const td = document.createElement('td');
+            td.classList.add('px-5', 'py-5', 'border-b', 'border-gray-200', 'bg-white', 'text-sm');
+            td.textContent = val;
+            tr.appendChild(td);
+        });
+
+        // Create delete button
+        const deleteButton = document.createElement('button');
+        deleteButton.textContent = 'Delete';
+        deleteButton.classList.add('bg-red-500', 'text-white', 'px-4', 'py-1', 'rounded');
+        deleteButton.onclick = function() {
+            const whereClause = Object.entries(record).map(([key, value]) => `${key}='${value}'`).join(' AND ');
+            deleteRecord(tableName, whereClause);
+            refreshNow = true;
+            console.log(refreshNow);
+            console.log("here");
+            // table.remove();
+            formContainer.innerHTML = ''; // Clear existing form
+            if (refreshNow === true) {
+            console.log('Refreshing');
+            fetchRecordsForDeletion(tableName);
+        }
+        };
+
+        const tdButton = document.createElement('td');
+        tdButton.appendChild(deleteButton);
+        tr.appendChild(tdButton);
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    // Append the table to the form container
+    formContainer.appendChild(table);
+}
+
+function deleteRecord(tableName, whereClause) {
+    const query = `DELETE FROM ${tableName} WHERE ${whereClause}`;
+    // Call runQuery to execute the delete operation
+    console.log(query)
+    runQuery(whereClause);
+}
+
+function fetchRecordsForUpdate() {
+    const tableName = document.getElementById('table').value;
+    fetch(`/get_records?table_name=${tableName}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                displayUpdateForm(data.data);
+            } else {
+                alert(data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert(error.message);
+        });
+}
+
+function fetchColumnsForInsert(tableName) {
+    console.log("GOT HERE!")
+    fetch(`/get_table_data?table_name=${tableName}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                displayInsertForm(data.columnNames, data.records);
+            } else {
+                alert(data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while fetching column names.');
+        });
+}
+
+function displayInsertForm(columnNames, records) {
+    console.log("Columns\n", columnNames)
+    console.log("Records\n", records)
+    const formContainer = document.getElementById('operationFormContainer');
+    formContainer.innerHTML = ''; // Clear existing form
+
+    const table = document.createElement('table');
+    table.classList.add('min-w-full', 'shadow', 'overflow-hidden', 'border-b', 'border-gray-200', 'sm:rounded-lg');
+
+    // Create the table header
+    const thead = document.createElement('thead');
+    thead.classList.add('bg-gray-50');
+    const headerRow = document.createElement('tr');
+    columnNames.forEach(columnName => {
+        const th = document.createElement('th');
+        th.textContent = columnName;
+        th.classList.add('px-6', 'py-3', 'text-left', 'text-xs', 'font-medium', 'text-gray-500', 'uppercase', 'tracking-wider');
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Create the table body
+    const tbody = document.createElement('tbody');
+
+    // Create a row for inserting new data
+    const insertRow = document.createElement('tr');
+    // make insertRow bigger
+    insertRow.classList.add('bg-blue', 'text-lg');
+
+    columnNames.forEach(columnName => {
+        const td = document.createElement('td');
+        const input = document.createElement('input');
+        input.setAttribute('type', 'text');
+        input.setAttribute('name', columnName);
+        input.classList.add('mt-1', 'focus:ring-indigo-500', 'focus:border-indigo-500', 'block', 'w-full', 'shadow-sm', 'sm:text-sm', 'border-gray-300', 'rounded-md', 'p-2', 'text-black', 'text-lg');
+        td.appendChild(input);
+        insertRow.appendChild(td);
+    });
+    tbody.appendChild(insertRow);
+
+    // Add rows for existing records
+    records.forEach(record => {
+        const tr = document.createElement('tr');
+        tr.classList.add('bg-white');
+        Object.values(record).forEach((val) => {
+            const td = document.createElement('td');
+            td.classList.add('px-5', 'py-5', 'border-b', 'border-gray-200', 'bg-white', 'text-sm');
+            td.textContent = val;
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    formContainer.appendChild(table);
+}
+
+function editRecord(index, record) {
+    const table = document.getElementById('operationFormContainer').querySelector('table');
+    const tbody = table.querySelector('tbody');
+    const rows = tbody.querySelectorAll('tr');
+    const editRow = rows[index];
+
+    for (let i = 0; i < editRow.cells.length - 1; i++) {
+        const cell = editRow.cells[i];
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = cell.textContent;
+        cell.innerHTML = '';
+        cell.appendChild(input);
+    }
+
+    const saveButton = document.createElement('button');
+    saveButton.innerText = 'Save';
+    saveButton.classList.add('save-btn', 'px-2', 'py-1', 'text-xs', 'font-semibold', 'text-white', 'bg-green-500', 'rounded');
+    saveButton.onclick = () => saveRecord(index, record);
+
+    const editCell = editRow.cells[editRow.cells.length - 1];
+    editCell.innerHTML = '';
+    editCell.appendChild(saveButton);
+}
+
+function saveRecord(index, originalRecord) {
+    const table = document.getElementById('operationFormContainer').querySelector('table');
+    const tbody = table.querySelector('tbody');
+    const editRow = tbody.querySelectorAll('tr')[index];
+    const inputs = editRow.querySelectorAll('input');
+
+    let updatedRecord = {};
+    let whereClauses = [];
+
+    inputs.forEach((input, i) => {
+        const key = Object.keys(originalRecord)[i];
+        const originalValue = originalRecord[key];
+        const currentValue = input.value;
+
+        if (currentValue !== originalValue) {
+            updatedRecord[key] = currentValue;
+        }
+
+        whereClauses.push(`${key}='${originalValue}'`);
+    });
+
+    const whereClause = whereClauses.join(' AND ');
+
+    if (Object.keys(updatedRecord).length > 0) {
+        fetch('/update_record', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tableName: document.getElementById('table').value, updatedRecord, whereClause })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                inputs.forEach((input, i) => {
+                    const cell = editRow.cells[i];
+                    cell.textContent = input.value;
+                    originalRecord[Object.keys(originalRecord)[i]] = input.value;
+                });
+
+                const editButton = document.createElement('button');
+                editButton.innerText = 'Edit';
+                editButton.classList.add('edit-btn', 'px-2', 'py-1', 'text-xs', 'font-semibold', 'text-white', 'bg-yellow-500', 'rounded');
+                editButton.onclick = () => editRecord(index, originalRecord);
+
+                const buttonCell = editRow.cells[editRow.cells.length - 1];
+                buttonCell.innerHTML = '';
+                buttonCell.appendChild(editButton);
+            } else {
+                alert(data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while saving the record.');
+        });
+    } else {
+        console.log('No changes made.');
+    }
+}
+
+function displayUpdateForm(records) {
+    const formContainer = document.getElementById('operationFormContainer');
+    formContainer.innerHTML = ''; // Clear existing form
+
+    // Create the table elements
+    const table = document.createElement('table');
+    table.classList.add('min-w-full');
+
+    // Create the table header
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    const headers = records.length > 0 ? Object.keys(records[0]) : [];
+    headers.forEach((header) => {
+        const th = document.createElement('th');
+        th.textContent = header;
+        headerRow.appendChild(th);
+    });
+    // Add an extra header cell for the edit buttons
+    const editTh = document.createElement('th');
+    editTh.textContent = 'Actions';
+    headerRow.appendChild(editTh);
+
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Create the table body
+    const tbody = document.createElement('tbody');
+    records.forEach((record, index) => {
+        const tr = document.createElement('tr');
+        Object.values(record).forEach((value) => {
+            const td = document.createElement('td');
+            const input = document.createElement('input');
+            input.setAttribute('type', 'text');
+            input.setAttribute('value', value);
+            input.classList.add('input', 'input-bordered'); // Add your CSS classes for styling
+            td.appendChild(input);
+            tr.appendChild(td);
+        });
+
+        // Create the edit button
+        const editButton = document.createElement('button');
+        editButton.textContent = 'Edit';
+        editButton.classList.add('btn', 'btn-primary'); // Add your CSS classes for styling
+        editButton.onclick = () => editRecord(index, record); // Implement this function to handle the edit logic
+
+        const tdButton = document.createElement('td');
+        tdButton.appendChild(editButton);
+        tr.appendChild(tdButton);
+
+        tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    formContainer.appendChild(table);
+}
+
+function updateTableForm() {
+    const operation = document.getElementById('operation').value;
+    const tableName = document.getElementById('table').value;
+    switch (operation) {
+        case 'SELECT':
+            fetchColumnsForSelect(tableName);
+            break;
+        case 'INSERT':
+            fetchColumnsForInsert(tableName);
+            break;
+        case 'UPDATE':
+            fetchRecordsForUpdate(tableName);
+            break;
+        case 'DELETE':
+            fetchRecordsForDeletion(tableName);
+            break;
+        default:
+            // Handle other operations or clear the form
+            document.getElementById('operationFormContainer').innerHTML = '';
+    }
+}
+
+// Update the form when the table selection changes
+document.getElementById('table').addEventListener('change', updateTableForm);
+
+// Update the form when the selected operation changes
+document.getElementById('operation').addEventListener('change', updateOperationForm);
+
+</script>
+</body>
+</html>
